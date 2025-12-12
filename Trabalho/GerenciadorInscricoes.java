@@ -1,21 +1,23 @@
-
 import java.io.*;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class GerenciadorInscricoes {
 
     private Map<String, Oficina> oficinas;
     private List<Participante> participantes;
 
-    private final String ARQUIVO_OFICINAS = "oficinas.ser";
-    private final String ARQUIVO_PARTICIPANTES = "participantes.ser";
+    // Constantes para os nomes dos arquivos
+    private final String ARQUIVO_OFICINAS = "oficinas.dat"; // Serialização para oficinas (dados complexos)
+    private final String ARQUIVO_PARTICIPANTES_TXT = "participantes.dat"; // Arquivo de texto para participantes
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     public GerenciadorInscricoes() {
         this.oficinas = new HashMap<>();
         this.participantes = new ArrayList<>();
-        // Inicializa com as oficinas padrão caso não carregue do arquivo depois
         inicializarOficinasPadrao();
     }
 
@@ -25,20 +27,19 @@ public class GerenciadorInscricoes {
                 "Layout Responsivo com HTML5 e CSS3", "C++: Desenvolvimento para iOS", "Google Apps"
         };
         for (String titulo : titulosDefault) {
-            // Put only if not exists (preserves existing data upon load if called oddly,
-            // but usually we load first. If load is empty, we populate).
             oficinas.putIfAbsent(titulo, new Oficina(titulo));
         }
     }
 
-    // --- Persistência ---
-
-    public void carregarDados() {
+    // --- Métodos Auxiliares de Persistência (Serialização) ---
+    
+    // Método para carregar a coleção de Oficinas (Mantido por Serialização)
+    private void carregarOficinasSerializado() {
         try (ObjectInputStream oisOficinas = new ObjectInputStream(new FileInputStream(ARQUIVO_OFICINAS))) {
             Object obj = oisOficinas.readObject();
             if (obj instanceof Map) {
                 this.oficinas = (Map<String, Oficina>) obj;
-                System.out.println("Dados de Oficinas carregados com sucesso.");
+                System.out.println("Dados de Oficinas carregados (Serialização).");
             }
         } catch (FileNotFoundException e) {
             System.out.println("Arquivo de oficinas não encontrado. Iniciando com padrão.");
@@ -47,36 +48,75 @@ public class GerenciadorInscricoes {
             System.out.println("Erro ao carregar oficinas: " + e.getMessage());
             inicializarOficinasPadrao();
         }
+    }
 
-        try (ObjectInputStream oisParticipantes = new ObjectInputStream(new FileInputStream(ARQUIVO_PARTICIPANTES))) {
-            Object obj = oisParticipantes.readObject();
-            if (obj instanceof List) {
-                this.participantes = (List<Participante>) obj;
-                System.out.println("Dados de Participantes carregados com sucesso.");
+    // Método para salvar a coleção de Oficinas (Mantido por Serialização)
+    private void salvarOficinasSerializado() {
+        try (ObjectOutputStream oosOficinas = new ObjectOutputStream(new FileOutputStream(ARQUIVO_OFICINAS))) {
+            oosOficinas.writeObject(oficinas);
+            System.out.println("Oficinas salvas (Serialização).");
+        } catch (IOException e) {
+            System.out.println("Erro ao salvar oficinas (Serialização): " + e.getMessage());
+        }
+    }
+
+    // --- Persistência em TXT e Serialização (Métodos Principais) ---
+
+    public void carregarDados() {
+        carregarOficinasSerializado(); // 1. Carrega oficinas (Serialização)
+        
+        // 2. Carrega participantes (TXT)
+        participantes.clear();
+        try (BufferedReader reader = new BufferedReader(new FileReader(ARQUIVO_PARTICIPANTES_TXT))) {
+            String linha;
+            while ((linha = reader.readLine()) != null) {
+                // Formato esperado: Nome;CPF;Sexo;DataNascimento(dd/MM/yyyy);Oficina1,Oficina2,...
+                String[] partes = linha.split(";"); 
+                
+                if (partes.length >= 4) {
+                    String nome = partes[0];
+                    String cpf = partes[1];
+                    String sexo = partes[2];
+                    LocalDate dataNascimento = LocalDate.parse(partes[3], DATE_FMT);
+                    
+                    Participante p = new Participante(nome, cpf, sexo, dataNascimento);
+                    
+                    if (partes.length == 5 && !partes[4].isEmpty()) {
+                        // Carrega as oficinas inscritas (separadas por vírgula)
+                        List<String> oficinasInscritas = Arrays.asList(partes[4].split(","));
+                        p.setTitulosOficinasInscritas(new ArrayList<>(oficinasInscritas)); // Usar ArrayList para ser mutável
+                    }
+                    
+                    participantes.add(p);
+                }
             }
+            System.out.println("Dados de Participantes carregados de " + ARQUIVO_PARTICIPANTES_TXT + " (TXT).");
         } catch (FileNotFoundException e) {
-            System.out.println("Arquivo de participantes não encontrado. Iniciando lista vazia.");
-        } catch (IOException | ClassNotFoundException e) {
-            System.out.println("Erro ao carregar participantes: " + e.getMessage());
+            System.out.println("Arquivo " + ARQUIVO_PARTICIPANTES_TXT + " não encontrado. Iniciando lista de participantes vazia.");
+        } catch (IOException | DateTimeParseException e) {
+            System.out.println("Erro ao carregar participantes de TXT: " + e.getMessage());
         }
     }
 
     public void salvarDados() {
-        try (ObjectOutputStream oosOficinas = new ObjectOutputStream(new FileOutputStream(ARQUIVO_OFICINAS))) {
-            oosOficinas.writeObject(oficinas);
-            System.out.println("Oficinas salvas.");
-        } catch (IOException e) {
-            System.out.println("Erro ao salvar oficinas: " + e.getMessage());
-        }
+        salvarOficinasSerializado(); // 1. Salva oficinas (Serialização)
 
-        try (ObjectOutputStream oosParticipantes = new ObjectOutputStream(
-                new FileOutputStream(ARQUIVO_PARTICIPANTES))) {
-            oosParticipantes.writeObject(participantes);
-            System.out.println("Participantes salvos.");
+        // 2. Salva participantes (TXT)
+        try (PrintWriter writer = new PrintWriter(new FileWriter(ARQUIVO_PARTICIPANTES_TXT))) {
+            for (Participante p : participantes) {
+                // Formato: Nome;CPF;Sexo;DataNascimento(dd/MM/yyyy);Oficina1,Oficina2,...
+                String dataStr = p.getDataNascimento().format(DATE_FMT);
+                String oficinasStr = String.join(",", p.getTitulosOficinasInscritas());
+                
+                writer.println(String.format("%s;%s;%s;%s;%s",
+                    p.getNome(), p.getCpf(), p.getSexo(), dataStr, oficinasStr));
+            }
+            System.out.println("Participantes salvos em " + ARQUIVO_PARTICIPANTES_TXT + " (TXT).");
         } catch (IOException e) {
-            System.out.println("Erro ao salvar participantes: " + e.getMessage());
+            System.out.println("Erro ao salvar participantes em TXT: " + e.getMessage());
         }
     }
+
 
     // --- Lógica de Registro ---
 
@@ -89,7 +129,7 @@ public class GerenciadorInscricoes {
             }
         }
 
-        // 2. Validação quantidade de oficinas
+        // 2. Validação quantidade de oficinas (1 a 3)
         if (titulosOficinas == null || titulosOficinas.size() < 1 || titulosOficinas.size() > 3) {
             return "ERRO: Selecione entre 1 e 3 oficinas.";
         }
@@ -144,17 +184,17 @@ public class GerenciadorInscricoes {
         if (oficina == null)
             return menores;
 
+        // Itera sobre os CPFs inscritos na oficina
         for (String cpf : oficina.getCpfsInscritos()) {
-            // Buscando o objeto participante pelo CPF (Ineficiente O(N), mas OK para escopo
-            // simples)
-            for (Participante p : participantes) {
-                if (p.getCpf().equals(cpf)) {
-                    if ("Menor de Idade".equals(p.getFaixaEtaria(dataReferencia))) {
-                        menores.add(p.getNome());
-                    }
-                    break;
-                }
-            }
+            // Busca o objeto participante pelo CPF (usando Stream para simplificar a busca)
+            participantes.stream()
+                         .filter(p -> p.getCpf().equals(cpf))
+                         .findFirst()
+                         .ifPresent(p -> {
+                            if ("Menor de Idade".equals(p.getFaixaEtaria(dataReferencia))) {
+                                menores.add(p.getNome());
+                            }
+                         });
         }
         return menores;
     }
@@ -167,10 +207,12 @@ public class GerenciadorInscricoes {
         if (total == 0)
             return stats;
 
-        long masculinos = participantes.stream().filter(p -> p.getSexo().equalsIgnoreCase("Masculino")).count();
-        long femininos = participantes.stream().filter(p -> p.getSexo().equalsIgnoreCase("Feminino")).count();
+        // Contagem usando Stream API
+        long masculinos = participantes.stream()
+                .filter(p -> p.getSexo() != null && p.getSexo().equalsIgnoreCase("Masculino")).count();
+        long femininos = participantes.stream()
+                .filter(p -> p.getSexo() != null && p.getSexo().equalsIgnoreCase("Feminino")).count();
 
-        // Assumindo apenas esses dois para simplificação, ou calculando %
         stats.put("Masculino", (double) masculinos / total * 100);
         stats.put("Feminino", (double) femininos / total * 100);
         return stats;
@@ -187,38 +229,27 @@ public class GerenciadorInscricoes {
     public Map<String, Map<String, Double>> gerarEstatisticasPorFaixaEtariaEOficina(LocalDate dataReferencia) {
         Map<String, Map<String, Double>> statsGeral = new HashMap<>();
 
-        for (Oficina rx : oficinas.values()) {
-            List<String> cpfs = rx.getCpfsInscritos();
+        for (Oficina of : oficinas.values()) {
+            List<String> cpfs = of.getCpfsInscritos();
             int totalInscritos = cpfs.size();
 
-            if (totalInscritos == 0) {
-                Map<String, Double> zeroStats = new HashMap<>();
-                zeroStats.put("Menor de Idade", 0.0);
-                zeroStats.put("Maior de Idade", 0.0);
-                statsGeral.put(rx.getTitulo(), zeroStats);
-                continue;
-            }
-
-            int menores = 0;
-            int maiores = 0;
-
-            for (String cpf : cpfs) {
-                for (Participante p : participantes) {
-                    if (p.getCpf().equals(cpf)) {
-                        String faixa = p.getFaixaEtaria(dataReferencia);
-                        if ("Menor de Idade".equals(faixa))
-                            menores++;
-                        else
-                            maiores++;
-                        break;
-                    }
-                }
-            }
-
             Map<String, Double> officeStats = new HashMap<>();
-            officeStats.put("Menor de Idade", (double) menores / totalInscritos * 100);
-            officeStats.put("Maior de Idade", (double) maiores / totalInscritos * 100);
-            statsGeral.put(rx.getTitulo(), officeStats);
+
+            if (totalInscritos == 0) {
+                officeStats.put("Menor de Idade", 0.0);
+                officeStats.put("Maior de Idade", 0.0);
+            } else {
+                long menores = cpfs.stream()
+                    .map(cpf -> participantes.stream().filter(p -> p.getCpf().equals(cpf)).findFirst().orElse(null))
+                    .filter(p -> p != null && "Menor de Idade".equals(p.getFaixaEtaria(dataReferencia)))
+                    .count();
+                    
+                long maiores = totalInscritos - menores; // O restante são maiores de idade
+
+                officeStats.put("Menor de Idade", (double) menores / totalInscritos * 100);
+                officeStats.put("Maior de Idade", (double) maiores / totalInscritos * 100);
+            }
+            statsGeral.put(of.getTitulo(), officeStats);
         }
         return statsGeral;
     }
