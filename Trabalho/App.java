@@ -1,4 +1,3 @@
-
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -12,7 +11,9 @@ public class App {
 
     public static void main(String[] args) {
         GerenciadorInscricoes manager = new GerenciadorInscricoes();
-        manager.carregarDados();
+        
+        // Chama o método que agora executa a persistência TXT e Serialização
+        manager.carregarDados(); 
 
         Scanner scanner = new Scanner(System.in);
         int opcao = -1;
@@ -49,7 +50,18 @@ public class App {
                     System.out.print("Digite o nome exato da oficina: ");
                     String tituloMenor = scanner.nextLine();
                     List<String> menores = manager.consultarMenoresDeIdadePorOficina(tituloMenor, LocalDate.now());
-                    System.out.println("Participantes menores de idade em '" + tituloMenor + "': " + menores);
+                    
+                    System.out.println("\n--- Consulta de Menores de Idade ---");
+                    if (menores.isEmpty()) {
+                         // Adicionando verificação para dar feedback ao usuário
+                        if (ofs.containsKey(tituloMenor)) {
+                            System.out.println("Nenhum participante menor de idade encontrado em '" + tituloMenor + "'.");
+                        } else {
+                            System.out.println("ERRO: Oficina '" + tituloMenor + "' não encontrada.");
+                        }
+                    } else {
+                         System.out.println("Participantes menores de idade em '" + tituloMenor + "': " + menores);
+                    }
                     break;
                 case 5:
                     Map<String, Double> stSexo = manager.gerarEstatisticasPorSexo();
@@ -72,7 +84,8 @@ public class App {
                     break;
                 case 0:
                     System.out.println("Salvando dados e saindo...");
-                    manager.salvarDados();
+                    // Chama o método que agora executa a persistência TXT e Serialização
+                    manager.salvarDados(); 
                     break;
                 default:
                     System.out.println("Opção inválida.");
@@ -111,9 +124,10 @@ public class App {
             System.out.print("Data de Nascimento (dd/MM/yyyy): ");
             String dataStr = scanner.nextLine();
             try {
+                // Adicionando um pequeno tratamento de erro no ano de nascimento
                 nasc = LocalDate.parse(dataStr, DATE_FMT);
-                if (nasc.getYear() > 2025) {
-                    System.out.println("Ano de nascimento inválido. O ano limite é 2025.");
+                if (nasc.isAfter(LocalDate.now())) {
+                    System.out.println("Data de nascimento não pode ser futura.");
                     nasc = null;
                 }
             } catch (DateTimeParseException e) {
@@ -130,7 +144,7 @@ public class App {
         List<String> selecionadas = new ArrayList<>();
         System.out.println("Selecione entre 1 e 3 oficinas (Digite o número da oficina):");
         for (int i = 0; i < titulosDisponiveis.size(); i++) {
-            System.out.println((i + 1) + ". " + titulosDisponiveis.get(i));
+            System.out.println((i + 1) + ". " + titulosDisponiveis.get(i) + " (Vagas: " + mapVagas.get(titulosDisponiveis.get(i)) + ")");
         }
 
         System.out.println("Digite os números separados por vírgula (ex: 1,3): ");
